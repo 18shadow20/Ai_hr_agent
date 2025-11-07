@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Чат с AI-агентом</title>
+  <style>
+    :root{
+      --bg:#0f1724; --muted:#9aa4b2; --accent:#6ee7b7; --text:#fff;
+    }
+    body{margin:0;font-family:sans-serif;background:var(--bg);color:var(--text);display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px}
+    .chat{width:600px;max-width:100%;background:#1e293b;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:10px}
+    .messages{flex:1;overflow-y:auto;max-height:500px;margin-bottom:10px;padding:10px;background:#0f1724;border-radius:8px}
+    .msg{padding:8px 12px;border-radius:12px;margin:4px 0;max-width:80%;word-wrap:break-word}
+    .user{background:var(--accent);align-self:flex-end;color:#000}
+    .ai{background:#334155;align-self:flex-start}
+    .input-area{display:flex;gap:10px}
+    input{flex:1;padding:10px;border:none;border-radius:12px;background:#0f1724;color:var(--text)}
+    button{padding:10px 20px;border:none;border-radius:12px;background:var(--accent);cursor:pointer;color:#000;font-weight:bold}
+    button:hover{opacity:0.8}
+    button:disabled{opacity:0.5;cursor:not-allowed}
+    .buttons-area{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    .btn-resume{background:#3b82f6}
+    .btn-record{background:#ef4444}
+    .btn-record.recording{background:#f59e0b;animation:pulse 1.5s infinite}
+    .btn-tts{background:#8b5cf6}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.7}}
+    .file-input-wrapper{position:relative;display:inline-block}
+    .file-input-wrapper input[type=file]{position:absolute;opacity:0;width:0;height:0}
+    .status{font-size:12px;color:var(--muted);margin-top:5px}
+    .audio-controls{display:flex;gap:5px;margin-top:5px}
+    .audio-controls button{padding:5px 10px;font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="chat">
+    <div class="buttons-area">
+      <div class="file-input-wrapper">
+        <button class="btn-resume" onclick="document.getElementById('resumeInput').click()">📄 Загрузить резюме</button>
+        <input type="file" id="resumeInput" accept=".pdf" style="display:none" onchange="uploadResume(event)">
+      </div>
+      <button class="btn-record" id="recordBtn" onclick="toggleRecording()">🎤 Записать голос</button>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="messages" id="messages"></div>
+    <div class="input-area">
+      <input id="userInput" placeholder="Введите сообщение..." onkeydown="if(event.key==='Enter'){sendMessage()}"/>
+      <button onclick="sendMessage()">Отправить</button>
+    </div>
+  </div>
+
+  <script>
+    let conversationId = null;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+    let lastAIResponse = null;
+
+    async function sendMessage() {
+      const input = document.getElementById("userInput");
+      const messages = document.getElementById("messages");
+      const text = input.value.trim();
+      if (!text) return;
+
+      // Добавляем сообщение пользователя
+      messages.innerHTML += `<div class="msg user">${text}</div>`;
+      input.value = "";
+      input.disabled = true;
+
+      try {
+        // Отправляем запрос на FastAPI
+        const requestBody = {message: text};
+        if (conversationId) {
+          requestBody.conversation_id = conversationId;
+        }
+
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(requestBody)
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.detail || "Ошибка API");
+        }
+
+        const data = await res.json();
+
+        // Сохраняем conversation_id для следующих сообщений
+        if (data.conversation_id) {
+          conversationId = data.conversation_id;
+        }
+
+        // Сохраняем последний ответ AI для озвучивания
+        lastAIResponse = data.response;
+
+        // Добавляем ответ агента с кнопкой озвучивания
+        const responseDiv = document.createElement("div");
+        responseDiv.className = "msg ai";
+        const textDiv = document.createElement("div");
+        textDiv.textContent = data.response;
+        responseDiv.appendChild(textDiv);
+        
+        const audioControls = document.createElement("div");
+        audioControls.className = "audio-controls";
+        const ttsButton = document.createElement("button");
+        ttsButton.className = "btn-tts";
+        ttsButton.textContent = "🔊 Озвучить";
+        ttsButton.onclick = () => playTTS(data.response);
+        audioControls.appendChild(ttsButton);
+        responseDiv.appendChild(audioControls);
+        
+        messages.appendChild(responseDiv);
+
+      } catch (err) {
+        messages.innerHTML += `<div class="msg ai">⚠️ Ошибка: ${err.message}</div>`;
+      } finally {
+        input.disabled = false;
+        input.focus();
+      }
+
+      // Автопрокрутка вниз
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    async function uploadResume(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const status = document.getElementById("status");
+      status.textContent = "Загрузка резюме...";
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch("/upload", {
+          method: "POST",
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.detail || "Ошибка загрузки");
+        }
+
+        const data = await res.json();
+        status.textContent = data.message || `Резюме успешно загружено! Пользователь: ${data.name || 'неизвестно'}`;
+        
+        // Очищаем статус через 3 секунды
+        setTimeout(() => {
+          status.textContent = "";
+        }, 3000);
+
+      } catch (err) {
+        status.textContent = `⚠️ Ошибка: ${err.message}`;
+        setTimeout(() => {
+          status.textContent = "";
+        }, 3000);
+      }
+
+      // Сбрасываем input
+      event.target.value = "";
+    }
+
+    async function toggleRecording() {
+      const recordBtn = document.getElementById("recordBtn");
+      const status = document.getElementById("status");
+      const messages = document.getElementById("messages");
+
+      if (!isRecording) {
+        // Начинаем запись
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          
+          // Используем формат, который поддерживается браузером
+          const options = { mimeType: 'audio/webm' };
+          if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+            options.mimeType = 'audio/ogg';
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+              options.mimeType = 'audio/mp4';
+            }
+          }
+          
+          mediaRecorder = new MediaRecorder(stream, options);
+          audioChunks = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              audioChunks.push(event.data);
+            }
+          };
+
+          mediaRecorder.onstop = async () => {
+            // Определяем MIME type из первого чанка
+            const mimeType = audioChunks.length > 0 && audioChunks[0].type 
+              ? audioChunks[0].type 
+              : 'audio/webm';
+            const audioBlob = new Blob(audioChunks, { type: mimeType });
+            await sendAudioForTranscription(audioBlob);
+            stream.getTracks().forEach(track => track.stop());
+          };
+
+          mediaRecorder.start(100); // Записываем чанки каждые 100мс
+          isRecording = true;
+          recordBtn.textContent = "⏹ Остановить запись";
+          recordBtn.classList.add("recording");
+          status.textContent = "🎤 Запись... Нажмите кнопку еще раз, чтобы остановить";
+
+        } catch (err) {
+          status.textContent = `⚠️ Ошибка доступа к микрофону: ${err.message}`;
+        }
+      } else {
+        // Останавливаем запись
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          mediaRecorder.stop();
+        }
+        isRecording = false;
+        recordBtn.textContent = "🎤 Записать голос";
+        recordBtn.classList.remove("recording");
+        status.textContent = "Обработка аудио...";
+      }
+    }
+
+    async function sendAudioForTranscription(audioBlob) {
+      const status = document.getElementById("status");
+      const messages = document.getElementById("messages");
+
+      try {
+        const formData = new FormData();
+        // Определяем имя файла на основе MIME type
+        const extension = audioBlob.type.includes('webm') ? '.webm' : 
+                         audioBlob.type.includes('ogg') ? '.ogg' : 
+                         audioBlob.type.includes('mp4') ? '.m4a' : '.wav';
+        formData.append("audio", audioBlob, `recording${extension}`);
+
+        const res = await fetch("/transcribe", {
+          method: "POST",
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || errorData.detail || "Ошибка транскрипции");
+        }
+
+        const data = await res.json();
+
+        // Сохраняем conversation_id
+        if (data.conversation_id) {
+          conversationId = data.conversation_id;
+        }
+
+        // Добавляем транскрибированный текст как сообщение пользователя
+        messages.innerHTML += `<div class="msg user">${data.transcribed_text}</div>`;
+
+        // Сохраняем последний ответ AI для озвучивания
+        lastAIResponse = data.response;
+
+        // Добавляем ответ агента с кнопкой озвучивания
+        const responseDiv = document.createElement("div");
+        responseDiv.className = "msg ai";
+        const textDiv = document.createElement("div");
+        textDiv.textContent = data.response;
+        responseDiv.appendChild(textDiv);
+        
+        const audioControls = document.createElement("div");
+        audioControls.className = "audio-controls";
+        const ttsButton = document.createElement("button");
+        ttsButton.className = "btn-tts";
+        ttsButton.textContent = "🔊 Озвучить";
+        ttsButton.onclick = () => playTTS(data.response);
+        audioControls.appendChild(ttsButton);
+        responseDiv.appendChild(audioControls);
+        
+        messages.appendChild(responseDiv);
+
+        status.textContent = "✓ Транскрипция завершена";
+        setTimeout(() => {
+          status.textContent = "";
+        }, 3000);
+
+        // Автопрокрутка вниз
+        messages.scrollTop = messages.scrollHeight;
+
+      } catch (err) {
+        status.textContent = `⚠️ Ошибка: ${err.message}`;
+        messages.innerHTML += `<div class="msg ai">⚠️ Ошибка транскрипции: ${err.message}</div>`;
+        setTimeout(() => {
+          status.textContent = "";
+        }, 3000);
+      }
+    }
+
+    async function playTTS(text) {
+      const status = document.getElementById("status");
+      
+      try {
+        status.textContent = "🔊 Генерация речи...";
+
+        const res = await fetch("/tts", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ text: text })
+        });
+
+        // Если серверный TTS недоступен, используем браузерный Web Speech API
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          if (errorData.use_browser_tts || res.status === 503) {
+            return useBrowserTTS(text);
+          }
+          throw new Error(errorData.error || "Ошибка синтеза речи");
+        }
+
+        const audioBlob = await res.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          status.textContent = "";
+        };
+
+        audio.onerror = () => {
+          status.textContent = "⚠️ Ошибка воспроизведения, используем браузерный синтез";
+          URL.revokeObjectURL(audioUrl);
+          useBrowserTTS(text);
+        };
+
+        await audio.play();
+        status.textContent = "🔊 Воспроизведение...";
+
+      } catch (err) {
+        status.textContent = "⚠️ Используем браузерный синтез речи";
+        useBrowserTTS(text);
+      }
+    }
+
+    function useBrowserTTS(text) {
+      const status = document.getElementById("status");
+      
+      if (!('speechSynthesis' in window)) {
+        status.textContent = "⚠️ Браузерный синтез речи не поддерживается";
+        setTimeout(() => {
+          status.textContent = "";
+        }, 3000);
+        return;
+      }
+
+      // Останавливаем предыдущее воспроизведение
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ru-RU';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+
+      utterance.onstart = () => {
+        status.textContent = "🔊 Воспроизведение...";
+      };
+
+      utterance.onend = () => {
+        status.textContent = "";
+      };
+
+      utterance.onerror = (event) => {
+        status.textContent = `⚠️ Ошибка синтеза речи: ${event.error}`;
+        setTimeout(() => {
+          status.textContent = "";
+        }, 3000);
+      };
+
+      window.speechSynthesis.speak(utterance);
+    }
+  </script>
+</body>
+</html>

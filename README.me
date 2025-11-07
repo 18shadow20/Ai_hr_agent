@@ -1,0 +1,103 @@
+# AI Recruitment Agent 🤖
+
+[![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge)](https://www.langchain.com/)
+
+Умный AI-агент для рекрутинга с поддержкой голосового взаимодействия, поиском по резюме и чат-интерфейсом.
+
+## ✨ Возможности
+
+- **💬 Умный чат** - общение с AI-агентом через текстовые сообщения
+- **🎤 Голосовой ввод** - запись и транскрипция голосовых сообщений
+- **📄 Обработка резюме** - автоматический парсинг и анализ PDF-резюме
+- **🔍 Семантический поиск** - поиск кандидатов по смыслу, а не ключевым словам
+- **🔊 Озвучивание ответов** - текстовые ответы преобразуются в речь
+- **💾 История диалогов** - сохранение всех сообщений в базе данных
+
+## 🛠 Технологический стек
+
+### Backend
+- **FastAPI** - современный веб-фреймворк
+- **PostgreSQL** - реляционная база данных
+- **SQLAlchemy** - ORM для работы с БД
+- **LangChain** - фреймворк для AI-приложений
+- **Pinecone** - векторная база данных для семантического поиска
+
+### AI/ML
+- **Google Gemini** - языковая модель для чата
+- **OpenAI Whisper** - транскрипция аудио
+- **Sentence Transformers** - эмбеддинги для поиска
+- **OpenAI TTS** - синтез речи
+
+### Предварительные требования
+
+- Python 3.9+
+- PostgreSQL
+- Аккаунты в сервисах:
+  - [Google AI Studio](https://aistudio.google.com/) (для Gemini API)
+  - [Pinecone](https://www.pinecone.io/) (для векторного поиска)
+
+### Установка
+
+## ⚙️ Установка и запуск
+1. **Клонируйте репозиторий:**
+```bash
+git clone https://github.com/18shadow20/Ai_hr_agent
+```
+2. **Установите зависимости:**
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+pip install -r requirements.txt
+```
+3.**Настройте переменные окружения:**
+```env
+GOOGLE_API_KEY=your_google_ai_studio_api_key
+PINECONE_API_KEY=your_pinecone_api_key
+DATABASE_URL=postgresql+psycopg2://postgres:12345@localhost/ai_agent
+```
+
+4. **Настройте базу данных:**
+```bash
+createdb ai_agent
+```
+5.**Запустите приложение:**
+```bash
+uvicorn main_app:app --reload --host 0.0.0.0 --port 8000
+```
+6. **Откройте в браузере:**
+```ruby
+http://localhost:8000
+```
+🎯 Использование
+
+1. Загрузка резюме
+Нажмите "📄 Загрузить резюме"
+Выберите PDF-файл с резюме
+Система автоматически распарсит и добавит в базу
+
+2. Текстовый чат
+Введите сообщение в текстовое поле
+Нажмите Enter или кнопку "Отправить"
+AI-агент ответит на основе данных из резюме
+
+3. Голосовое общение
+Нажмите "🎤 Записать голос"
+Разрешите доступ к микрофону
+Говорите - система распознает речь и отправит агенту
+Нажмите "⏹ Остановить запись" для завершения
+
+4. Озвучивание ответов
+Нажмите "🔊 Озвучить" под любым ответом агента
+Система преобразует текст в речь
+
+🔧 API Endpoints
+Метод	Endpoint	Описание
+GET	/	Веб-интерфейс чата
+POST	/api/chat	Отправка сообщения агенту
+POST	/upload	Загрузка PDF-резюме
+POST	/transcribe	Транскрипция аудио
+POST	/tts	Преобразование текста в речь
+POST	/search	Семантический поиск кандидатов
